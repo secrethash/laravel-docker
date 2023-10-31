@@ -1,0 +1,15 @@
+entryPoints:
+  web:
+    address: :80
+providers:
+  docker:
+    watch: true
+    exposedByDefault: false
+    network: web
+log:
+  level: DEBUG
+ping: {}
+api:
+  dashboard: true
+  insecure: true
+accessLog: {}

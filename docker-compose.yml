@@ -1,0 +1,220 @@
+version: '3'
+services:
+    app:
+        build:
+            context: '.'
+            dockerfile: ./runtime/${BUILD_RUNTIME:-8.1}/Dockerfile
+            args:
+                DOCKER_DIR: runtime/${BUILD_RUNTIME:-8.1}
+                PROJECT_DIR: './workspace/backend'
+                NODE_VERSION: 18
+        image: secrethash/shld
+        container_name: shld-core
+        restart: unless-stopped
+        ports:
+            - "${FORWARD_PHP_FPM_PORT:-9000}:9000"
+        tty: true
+        volumes:
+            - 'shld-backend:/var/www/html'
+        networks:
+            - shld
+        depends_on:
+            - mariadb
+    supervisor:
+        build:
+            context: '.'
+            dockerfile: ./runtime/${BUILD_RUNTIME:-8.1}/supervisor.Dockerfile
+            args:
+                DOCKER_DIR: runtime/${BUILD_RUNTIME:-8.1}
+                PROJECT_DIR: './workspace/backend'
+                NODE_VERSION: 18
+        image: secrethash/worker
+        container_name: shld-worker
+        restart: unless-stopped
+        environment:
+            YARN_DEV_ONSTART: ${YARN_DEV_ONSTART:-true}
+            YARN_DEV_RESTART: ${YARN_DEV_RESTART:-true}
+            SCHEDULE_WORKER_ONSTART: ${SCHEDULE_WORKER_ONSTART:-true}
+            SCHEDULE_WORKER_RESTART: ${SCHEDULE_WORKER_RESTART:-true}
+            QUEUE_WORKER_ONSTART: ${QUEUE_WORKER_ONSTART:-true}
+            QUEUE_WORKER_RESTART: ${QUEUE_WORKER_RESTART:-true}
+            HORIZON_ONSTART: ${HORIZON_ONSTART:-true}
+            HORIZON_RESTART: ${HORIZON_RESTART:-true}
+        volumes:
+            - 'shld-backend:/var/www/html'
+        networks:
+            - shld
+        depends_on:
+            - app
+    nginx:
+        image: nginx:stable-alpine
+        container_name: shld-engine
+        tty: true
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.nginx.rule=HostRegexp(`{catchall:.*}`) && PathPrefix(`/`) && !Host(`${TRAEFIK_DASH}`)"
+            # HTTP Scheme
+            - "traefik.http.routers.nginx.entrypoints=web"
+            - "traefik.http.routers.nginx.tls=false"
+            # HTTPS Scheme
+            # - "traefik.http.routers.nginx.entrypoints=websecure"
+            # - "traefik.http.routers.nginx.tls=true"
+            # - "traefik.http.routers.nginx.tls.certresolver=default"
+            # - "traefik.http.routers.nginx.middlewares=redirect-to-https"
+            # - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+            # - traefik.http.routers.nginx.tls.domains[0].main=${APP_HOST}
+            # - traefik.http.routers.nginx.tls.domains[0].sans=*.${APP_HOST}
+            # Portainer
+            - "traefik.http.routers.nginx.middlewares=portainer-prefix"
+            - "traefik.http.middlewares.portainer-prefix.stripprefix.prefixes=/"
+            - "traefik.http.middlewares.portainer-prefix.stripprefix.forceslash=false"
+        volumes:
+            - ./runtime/${BUILD_RUNTIME:-8.1}/nginx/default.conf:/etc/nginx/conf.d/default.conf
+            - 'shld-backend:/var/www/html'
+        depends_on:
+            - traefik
+            - app
+        networks:
+            - shld
+    traefik:
+        image: traefik:v2.10
+        container_name: shld-reverse-proxy
+        restart: always
+        ports:
+            - "${FORWARD_TRAEFIK_PORT:-80}:80"
+            # For HTTPS Scheme
+            # - "${FORWARD_TRAEFIK_WEBSECURE_PORT:-443}:443"
+            - "${FORWARD_TRAEFIK_DASH_PORT:-8080}:8080"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.api.rule=Host(`${TRAEFIK_DASH}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+            - "traefik.http.routers.api.service=api@internal"
+            # HTTP Scheme
+            - "traefik.http.routers.api.entrypoints=web"
+            - "traefik.http.routers.api.tls=false"
+            # HTTPS Scheme
+            # - "traefik.http.routers.api.entrypoints=websecure"
+            # - "traefik.http.routers.api.tls=true"
+            # - "traefik.http.routers.api.tls.certresolver=default"
+        healthcheck:
+            test: ['CMD', 'traefik', 'healthcheck', '--ping']
+            interval: 10s
+            timeout: 10s
+            retries: 5
+        volumes:
+            # For HTTP Scheme
+            - ./runtime/${BUILD_RUNTIME:-8.1}/traefik.yml:/traefik.yml
+            # For HTTPS Scheme
+            # - ./runtime/${BUILD_RUNTIME:-8.1}/traefik.secure.yml:/traefik.yml
+            - "/var/run/docker.sock:/var/run/docker.sock"
+            - ./letsencrypt:/letsencrypt
+        networks:
+            - shld
+    mariadb:
+        image: 'mariadb:11'
+        container_name: shld-db
+        ports:
+            - '${FORWARD_DB_PORT:-3306}:3306'
+        environment:
+            MYSQL_ROOT_PASSWORD: '${DB_ROOT_PASSWORD}'
+            # MYSQL_ROOT_HOST: "%"
+            MYSQL_DATABASE: '${DB_DATABASE}'
+            MYSQL_USER: '${DB_USERNAME}'
+            MYSQL_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        volumes:
+            - 'shld-mariadb:/var/lib/mysql'
+            - './scripts/mysql/create_testing_database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
+            - ./runtime/${BUILD_RUNTIME:-8.1}/mariadb/my.cnf:/etc/mysql/mariadb.conf.d/10-custom-conf.cnf:ro
+            - ./dumps:/mysql-dumps:ro
+        networks:
+            - shld
+        healthcheck:
+            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            interval: 10s
+            retries: 3
+            timeout: 5s
+    redis:
+        image: redis:alpine
+        container_name: shld-redis
+        ports:
+            - "${FORWARD_REDIS_PORT:-6379}:6379"
+        volumes:
+            - "shld-redis:/data"
+        networks:
+            - shld
+    memcached:
+        image: memcached:alpine
+        container_name: shld-memcached
+        ports:
+            - "11211:11211"
+        networks:
+            - shld
+    meilisearch:
+        image: getmeili/meilisearch:latest
+        ports:
+            - '${FORWARD_MEILISEARCH_PORT:-7700}:7700'
+        volumes:
+            - 'shld-meilisearch:/meili_data'
+        networks:
+            - shld
+        healthcheck:
+            test: ["CMD", "wget", "--no-verbose", "--spider",  "http://localhost:7700/health"]
+            retries: 3
+            timeout: 5s
+    # This can be used to test AWS S3 OR S3 Compatible Storage Drivers locally
+    minio:
+        image: 'minio/minio:latest'
+        container_name: shld-minio
+        ports:
+            - '${FORWARD_MINIO_PORT:-9000}:9000'
+            - '${FORWARD_MINIO_CONSOLE_PORT:-8900}:8900'
+        environment:
+            MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.minio.rule=Host(`${APP_HOST}`) && PathPrefix(`/`) && !Host(`${TRAEFIK_DASH}`)"
+            # HTTP Scheme
+            - "traefik.http.routers.minio.entrypoints=web"
+            - "traefik.http.routers.minio.tls=false"
+            # Portainer
+            - "traefik.http.routers.minio.middlewares=portainer-prefix"
+            - "traefik.http.middlewares.portainer-prefix.stripprefix.prefixes=/"
+            - "traefik.http.middlewares.portainer-prefix.stripprefix.forceslash=false"
+        volumes:
+            - 'shld-minio:/data/minio'
+        networks:
+            - shld
+        command: minio server /data/minio --console-address ":8900"
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+            interval: 10s
+            retries: 3
+            timeout: 5s
+    mailhog:
+        image: 'mailhog/mailhog:latest'
+        container_name: shld-mailhog
+        ports:
+            - '${FORWARD_MAILHOG_PORT:-1025}:1025'
+            - '${FORWARD_MAILHOG_DASHBOARD_PORT:-8025}:8025'
+        networks:
+            - shld
+networks:
+    shld:
+        driver: bridge
+volumes:
+    shld-mariadb:
+        driver: local
+    shld-minio:
+        driver: local
+    shld-redis:
+        driver: local
+    shld-meilisearch:
+        driver: local
+    shld-backend:
+        driver: local
+        driver_opts:
+          type: 'none'
+          o: 'bind'
+          device: './workspace/backend'
