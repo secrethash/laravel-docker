@@ -49,6 +49,8 @@ shld_service () {
             case "$2" in
                 -h|--help)
                     shld_help_header
+                    echo "Bring up the docker containers by running."
+                    echo " "
                     echo "shld up [options]"
                     echo "EXAMPLE:"
                     echo -e "\t shld up -b \n\t shld up -r \n\t shld up -h"
@@ -86,6 +88,22 @@ shld_service () {
             append+=( --force-recreate )
         fi
     elif [[ "$1" == "down" || "$1" == "d" ]]; then
+        while test $# -gt 0; do
+            case "$2" in
+                -h|--help)
+                    shld_help_header
+                    echo "Shutdown (gracefully) and remove the docker containers"
+                    echo " "
+                    echo "shld down [options]"
+                    echo "EXAMPLE:"
+                    echo -e "\t shld down \n\t shld down -h"
+                    echo " "
+                    echo "options:"
+                    echo "-h, --help                shows this help"
+                    return
+                    ;;
+            esac
+        done
         shift $(expr $OPTIND + 1 )
         docker_cmd=(docker)
         service=(compose)
@@ -93,6 +111,22 @@ shld_service () {
         append=()
         # append=("$@")
     elif [[ "$1" == "ps" ]]; then
+        while test $# -gt 0; do
+            case "$2" in
+                -h|--help)
+                    shld_help_header
+                    echo "List all the created and running docker containers"
+                    echo " "
+                    echo "shld down [options]"
+                    echo "EXAMPLE:"
+                    echo -e "\t shld down \n\t shld down -h"
+                    echo " "
+                    echo "options:"
+                    echo "-h, --help                shows this help"
+                    return
+                    ;;
+            esac
+        done
         docker_cmd=(docker)
         service=(compose)
         executable=(ps)
