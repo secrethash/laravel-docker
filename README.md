@@ -55,6 +55,19 @@ docker compose rm supervisor
 docker compose up -d
 ```
 
+## Using AWS Signed URL uploads
+
+AWS supports creating a pre-signed url that can then be used to upload files to a specific predefined location, example: `tmp/`. Using this feature with minio as-is is not possible because when the `shld-core` core container listens to `http://minio:9010/*` it understands that the request is for the minio service's container. But when the `http://minio:9010/*` signed url is opened in your browser it dosen't know what this host is. For this we need to update the hosts file (generally located at `/etc/hosts` in linux) to understand `minio -> 127.0.0.1`.
+- For Linux Users, edit the hosts file at `/etc/hosts` (you can run `sudo nano /etc/hosts` in terminal) and add this line:
+  ```
+  127.0.0.1       minio
+  ```
+- For Mac Users, edit the hosts file located at `/private/etc/hosts` (you can run `sudo nano /private/etc/hosts` in your terminal) and add this line:
+  ```
+  127.0.0.1       minio
+  ```
+- For Windows users it is recomended to use [PowerToys](https://learn.microsoft.com/en-us/windows/powertoys/). It includes a great [Hosts file editor](https://learn.microsoft.com/en-us/windows/powertoys/hosts-file-editor) tool for easier hosts editing.
+
 ## Conatiners
 
 ```sh
