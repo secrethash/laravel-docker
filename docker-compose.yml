@@ -34,6 +34,7 @@ services:
         environment:
             YARN_DEV_ONSTART: ${YARN_DEV_ONSTART:-true}
             YARN_DEV_RESTART: ${YARN_DEV_RESTART:-true}
+            YARN_DEV_COMMAND: ${YARN_DEV_COMMAND:-"yarn dev"}
             SCHEDULE_WORKER_ONSTART: ${SCHEDULE_WORKER_ONSTART:-true}
             SCHEDULE_WORKER_RESTART: ${SCHEDULE_WORKER_RESTART:-true}
             QUEUE_WORKER_ONSTART: ${QUEUE_WORKER_ONSTART:-true}
