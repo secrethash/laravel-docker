@@ -1,5 +1,6 @@
 FROM php:8.1-fpm
 
+# ARGS
 ARG DOCKER_DIR
 ARG NODE_VERSION
 
@@ -16,6 +17,7 @@ RUN apt-get install -y \
     libcurl4-gnutls-dev \
     libedit-dev \
     libfreetype6-dev \
+    openssh-client \
     libicu-dev \
     libjpeg62-turbo-dev \
     libkrb5-dev \
@@ -52,11 +54,12 @@ RUN docker-php-ext-install -j$(nproc) \
     pgsql \
     soap \
     sockets \
+    bcmath \
     xsl \
     exif
 
 # EXTENTIONS (Configure & Install)
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j$(nproc) gd \
     && PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
     && docker-php-ext-install -j$(nproc) imap \
@@ -83,13 +86,13 @@ RUN docker-php-source delete \
     && rm -rf /tmp/* /var/tmp/*
 
 
-# Add Nde, NPM & Yarn
+# Add Node, NPM & Yarn
 RUN curl -sL https://deb.nodesource.com/setup_$NODE_VERSION.x | bash -
 RUN apt-get update \
  && apt-get install -y \
  nodejs
 RUN npm install -g npm@latest
-RUN npm install -g yarn
+RUN corepack enable
 
 # Setup Supervisor
 RUN mkdir -p "/etc/supervisor/logs"
@@ -103,6 +106,8 @@ RUN useradd -u 1000 -ms /bin/bash -g supervisoruser supervisoruser
 # Change ownership of yarn config directory
 RUN mkdir -p /root/.config/yarn
 RUN chown -R supervisoruser:supervisoruser /root/.config/yarn
+RUN chown -R supervisoruser:supervisoruser /var/www/html
+COPY --chown=supervisoruser:supervisoruser ${DOCKER_DIR}/php/php.ini /usr/local/etc/php/
 
 # Launch
 CMD ["/usr/bin/supervisord", "-n", "-c",  "/etc/supervisor/supervisord.conf"]
